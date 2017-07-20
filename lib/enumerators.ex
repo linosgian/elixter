@@ -12,7 +12,20 @@ defmodule GoogleEnum do
       {:ok, %HTTPoison.Response{status_code: 200,body: body}} ->
         body
         |> Floki.find("cite")
+        |> Enum.map(&elem(&1, 2))
+        |> Enum.map(&to_string/1)
+        |> Enum.map(parse)
         |> IO.inspect 
+    end
+  end
+
+  defp parse(unparsed_url) do
+    url = URI.parse(unparsed_url)
+    case url do
+      %URI{scheme: nil, host: nil} ->
+        url
+        |> String.split("/")
+        |> List.first
     end
   end
 end

@@ -33,8 +33,4 @@ defmodule Elixter do
           System.halt(0)
     end
   end
-
-  def hello do
-    PortScanner.scan_ports("83.212.100.68", [80, 443, 8000, 22, 1000, 33])
-  end
 end
