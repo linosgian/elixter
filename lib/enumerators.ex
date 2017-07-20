@@ -11,7 +11,7 @@ defmodule GoogleEnum do
     case resp do
       {:ok, %HTTPoison.Response{status_code: 200,body: body}} ->
         body
-        |> Floki.find(".kv")
+        |> Floki.find("cite")
         |> IO.inspect 
     end
   end
