@@ -5,7 +5,10 @@ defmodule Elixter do
   """  
   def main(args) do
     domain = parse_args(args)
-    GoogleEnum.run(domain)
+    engines = Application.get_env(:elixter, :engines)
+    engines
+    |> Enum.map(&Task.async(&1, :enumerate, [domain]))
+    |> Enum.map(&Task.await(&1, 50000))
   end
   
   defp parse_args(args) do 
