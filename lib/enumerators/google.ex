@@ -1,39 +1,64 @@
-defmodule GoogleEnum do
+defmodule Elixter.Enumerator.GoogleEnum do
+  @headers Application.get_env(:elixter, :headers)
+  @timeout Application.get_env(:elixter, :timeout)
+  
+  alias Elixter.Helpers
+  
   def enumerate(domain) do
-    headers = Application.get_env(:elixter, :headers)
-    timeout = Application.get_env(:elixter, :timeout)
-    query(domain, headers, timeout, 3, MapSet.new, 0)
+    subdomains =
+      case domain do
+        "www" <> _rest ->
+          MapSet.new 
+        _ ->        
+          MapSet.new(["www." <> domain])
+      end
+    query(domain, subdomains, 0)
   end
   
-  defp query(domain, headers, timeout, retries, subdomains, page_num) do
+  defp query(domain, subdomains, findings_num) do
+    if findings_num >= 100, do: subdomains # If we reached the 10th page, return.
 
-    if page_num >= 30 or retries == 0, do: subdomains
-    query = "site:" <> domain <> "%20-www." <> domain
-    request = "https://www.google.com/search?q=" <> query <>
-              "&btnG=Search&hl=en-US&biw=&bih=&gbv=1&start=" <> to_string(page_num)
-    IO.puts request
-    IO.puts page_num
-    IO.puts retries
-    response = HTTPoison.get(request, headers, [follow_redirect: true, recv_timeout: timeout])
+    request = build_query(domain, subdomains, findings_num)
+    response = HTTPoison.get(request, @headers, [follow_redirect: true, recv_timeout: @timeout])
 
     case parse_response(response) do
-      {:ok, new_subdoms} ->
-        IO.inspect new_subdoms
-        updated_subdoms = MapSet.union(subdomains, new_subdoms)
-        :timer.sleep(1000)
-        query(domain, headers, timeout, 3, updated_subdoms, page_num + 10)      
+      {:ok, recv_subdoms} ->
+        # If we found 0 new subdomains, move on to the next page
+        if MapSet.subset?(recv_subdoms, subdomains) do
+          :timer.sleep(2000)
+          IO.inspect(subdomains)
+          query(domain, subdomains, findings_num + 10)
+        else
+          updated_subdoms = MapSet.union(subdomains, recv_subdoms)
+          IO.inspect(updated_subdoms)
+          :timer.sleep(2000)
+          query(domain, updated_subdoms, findings_num)              
+        end
       :blocked ->
-        subdomains
+        Helpers.error ~S("Google has blocked the "site:" searches, try again later")
+        {:blocked, subdomains}
       :empty ->
-        :timer.sleep(1000)
-        query(domain, headers, timeout, retries-1, subdomains, page_num)
+        IO.puts "Google Search is done..."
+        {:done, subdomains}
     end
   end
-  
+
+  defp build_query(domain, subdomains, findings_num) do
+    subdomains_query = 
+    subdomains 
+    |> MapSet.to_list
+    |> Enum.map(&("-" <> &1)) # prepend "-" to each subdomain
+    |> Enum.join("%20")       # add a url encoded space between subdomains
+    query_str = "site:" <> domain <> "%20" <> subdomains_query
+    
+    "https://www.google.com/search?q=" <> query_str <>
+    "&btnG=Search&hl=en-US&biw=&bih=&gbv=1&start=" <> to_string(findings_num)    
+  end
+
   defp parse_response(response) do
     case response do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
-        if (body =~ "did not match any documents") do
+        if body =~ "did not match any documents" do
           :empty 
         else
           new_subdoms =
@@ -47,8 +72,10 @@ defmodule GoogleEnum do
           {:ok, new_subdoms}
         end
       {:ok, %HTTPoison.Response{body: body}} ->
-        IO.puts body
+        IO.inspect body
         :blocked  
+      {:error, reason} ->
+        IO.inspect reason
     end
   end
 

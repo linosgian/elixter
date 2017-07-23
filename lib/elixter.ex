@@ -1,17 +1,18 @@
 defmodule Elixter do
-  # require PortScanner
   @moduledoc """
-  Documentation for Elixter.
-  """  
+    Documentation for Elixter.
+  """
+  alias Elixter.Helpers
+  
   def main(args) do
     domain = parse_args(args)
     engines = Application.get_env(:elixter, :engines)
     engines
     |> Enum.map(&Task.async(&1, :enumerate, [domain]))
-    |> Enum.map(&Task.await(&1, 50000))
+    |> Enum.map(&Task.await(&1, 50_000))
   end
-  
-  defp parse_args(args) do 
+
+  defp parse_args(args) do
     {opts, _, _} = OptionParser.parse(
       args,
       switches: [
@@ -27,7 +28,8 @@ defmodule Elixter do
         %{domain: domain} ->
           case :inet.gethostbyname(String.to_char_list(domain)) do
             {:error, reason} ->
-              Helpers.error("Domain name cannot be resolved with error: " <> to_string(reason))
+              Helpers.error("Domain name cannot be resolved with error: "
+                            <> to_string(reason))
             {:ok, _results} ->
               domain
           end
