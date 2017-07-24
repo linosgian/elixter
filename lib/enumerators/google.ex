@@ -1,45 +1,73 @@
-defmodule Elixter.Enumerator.GoogleEnum do
+defmodule Elixter.Enumerator.Google do
   @headers Application.get_env(:elixter, :headers)
   @timeout Application.get_env(:elixter, :timeout)
   
   alias Elixter.Helpers
+
+  ##############################################################################
+  ########################## GenServer Callbacks ###############################
+  ##############################################################################
   
-  def enumerate(domain) do
-    subdomains =
-      case domain do
-        "www" <> _rest ->
-          MapSet.new 
-        _ ->        
-          MapSet.new(["www." <> domain])
-      end
-    query(domain, subdomains, 0)
+  def start_link(domain) do
+    GenServer.start_link(__MODULE__, domain)
+  end
+
+  def init(domain) do
+    Task.Supervisor.start_link(name: QueryTask)
+    Process.send_after(self(), {domain, 0}, 0)
+    {:ok, domain}
   end
   
-  defp query(domain, subdomains, findings_num) do
-    if findings_num >= 100, do: subdomains # If we reached the 10th page, return.
-
-    request = build_query(domain, subdomains, findings_num)
-    response = HTTPoison.get(request, @headers, [follow_redirect: true, recv_timeout: @timeout])
-
-    case parse_response(response) do
-      {:ok, recv_subdoms} ->
+  def handle_info({domain, findings_num}, state) do
+    subdomains = GenServer.call(CacheServer, :get_state)
+    args = {domain, subdomains, findings_num}
+    query_task = Task.Supervisor.async_nolink(QueryTask, __MODULE__, :query, [args])
+    
+    case Task.yield(query_task, 10000) do
+      {:ok, {:ok, recv_subdoms}} ->
+        IO.puts :here
         # If we found 0 new subdomains, move on to the next page
         if MapSet.subset?(recv_subdoms, subdomains) do
-          :timer.sleep(2000)
-          IO.inspect(subdomains)
-          query(domain, subdomains, findings_num + 10)
+          schedule_work({domain, findings_num + 10})
         else
-          updated_subdoms = MapSet.union(subdomains, recv_subdoms)
-          IO.inspect(updated_subdoms)
-          :timer.sleep(2000)
-          query(domain, updated_subdoms, findings_num)              
+          GenServer.cast(CacheServer, {:merge, recv_subdoms})
+          schedule_work({domain, 0})
         end
-      :blocked ->
-        Helpers.error ~S("Google has blocked the "site:" searches, try again later")
-        {:blocked, subdomains}
-      :empty ->
+      {:ok, :done} ->
         IO.puts "Google Search is done..."
-        {:done, subdomains}
+      {:ok, :blocked} ->
+        Helpers.error ~S("Google has blocked the "site:" searches, try again later")
+      {:ok, {:error, reason}} ->
+        IO.inspect reason
+      {:exit, reason} ->
+        IO.inspect reason
+    end
+    {:noreply, state}
+  end
+
+  def terminate(reason, _state) do
+    IO.inspect reason
+    :normal
+  end
+  
+  ##############################################################################
+  ########################## Private Module Functions ##########################
+  ##############################################################################
+  
+  defp schedule_work(state) do
+    Process.send_after(self(), state, 5000)
+  end
+  
+  def query({domain, subdomains, findings_num}) do
+    if findings_num >= 10 do
+     :done # If we reached the 9th page, return.
+    else
+      IO.puts findings_num
+      request = build_query(domain, subdomains, findings_num)
+      options = [follow_redirect: true, recv_timeout: @timeout]
+      response = HTTPoison.get(request, @headers, options)
+
+      parse_response(response)
     end
   end
 
@@ -59,9 +87,9 @@ defmodule Elixter.Enumerator.GoogleEnum do
     case response do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         if body =~ "did not match any documents" do
-          :empty 
+          :done 
         else
-          new_subdoms =
+          new_subdomains =
             body
             |> Floki.find("cite")
             |> Enum.map(&elem(&1, 2))
@@ -69,13 +97,13 @@ defmodule Elixter.Enumerator.GoogleEnum do
             |> Enum.map(&parse_url/1)
             |> Enum.uniq
             |> MapSet.new
-          {:ok, new_subdoms}
+          {:ok, new_subdomains}
         end
       {:ok, %HTTPoison.Response{body: body}} ->
-        IO.inspect body
-        :blocked  
+        IO.puts body  
+        :blocked
       {:error, reason} ->
-        IO.inspect reason
+        {:error, reason}
     end
   end
 
