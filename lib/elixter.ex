@@ -16,6 +16,10 @@ defmodule Elixter do
     IO.inspect GenServer.call(CacheServer, :get_state)
     :timer.sleep(3000)
     poke_cache()
+    receive do
+      {:done } ->
+        System.halt(0)
+    end
   end
 
   defp parse_args(args) do

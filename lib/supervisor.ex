@@ -14,6 +14,7 @@ defmodule Elixter.MainSupervisor do
      |> Enum.map(&(worker(&1, [domain], restart: :transient)))
     children = [worker(Elixter.Cache, [domain]) | engine_workers]
     
+    # children = [worker(Elixter.Cache, [domain])]
     supervise(children, strategy: :one_for_one)
   end
 end

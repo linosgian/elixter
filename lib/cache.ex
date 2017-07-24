@@ -14,8 +14,8 @@ defmodule Elixter.Cache do
           MapSet.new(["www." <> domain])
       end
     {:ok, subdomains}
+    GenServer.start_link(__MODULE__, MapSet.new([domain]), name: CacheServer)
   end 
-
 
   def handle_call(:get_state, _from, state) do
     {:reply, state, state}

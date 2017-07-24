@@ -89,7 +89,7 @@ defmodule Elixter.Enumerator.Google do
         if body =~ "did not match any documents" do
           :done 
         else
-          new_subdoms =
+          new_subdomains =
             body
             |> Floki.find("cite")
             |> Enum.map(&elem(&1, 2))
@@ -97,7 +97,7 @@ defmodule Elixter.Enumerator.Google do
             |> Enum.map(&parse_url/1)
             |> Enum.uniq
             |> MapSet.new
-          {:ok, new_subdoms}
+          {:ok, new_subdomains}
         end
       {:ok, %HTTPoison.Response{body: body}} ->
         IO.puts body  
