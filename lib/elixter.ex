@@ -3,13 +3,19 @@ defmodule Elixter do
     Documentation for Elixter.
   """
   alias Elixter.Helpers
-  
+  alias Elixter.MainSupervisor
+
   def main(args) do
     domain = parse_args(args)
-    engines = Application.get_env(:elixter, :engines)
-    engines
-    |> Enum.map(&Task.async(&1, :enumerate, [domain]))
-    |> Enum.map(&Task.await(&1, 50_000))
+    MainSupervisor.start_link(domain) 
+    poke_cache()
+  end
+  
+  # Temp function to test pipeline
+  defp poke_cache() do
+    IO.inspect GenServer.call(CacheServer, :get_state)
+    :timer.sleep(3000)
+    poke_cache()
   end
 
   defp parse_args(args) do
