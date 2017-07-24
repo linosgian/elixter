@@ -1,10 +1,19 @@
-defmodule Elixter.Enumerator.GoogleEnum do
+defmodule Elixter.Enumerator.Google do
   @headers Application.get_env(:elixter, :headers)
   @timeout Application.get_env(:elixter, :timeout)
   
   alias Elixter.Helpers
+
+  ##############################################################################
+  ########################## GenServer Callbacks ###############################
+  ##############################################################################
   
-  def enumerate(domain) do
+  def start_link(domain) do
+    GenServer.start_link(__MODULE__, domain)
+  end
+
+  def init(domain) do
+    Task.Supervisor.start_link(name: QueryTask)
     subdomains =
       case domain do
         "www" <> _rest ->
@@ -12,28 +21,53 @@ defmodule Elixter.Enumerator.GoogleEnum do
         _ ->        
           MapSet.new(["www." <> domain])
       end
-    query(domain, subdomains, 0)
+    Process.send_after(self(), {domain, subdomains, 0}, 0)
+    {:ok, domain}
   end
   
-  defp query(domain, subdomains, findings_num) do
+  def handle_info({domain, subdomains, findings_num}, state) do
+    args = {domain, subdomains, findings_num}
+    task = Task.Supervisor.async_nolink(QueryTask, __MODULE__, :query, [args])
+    
+    case Task.yield(task, 10000) do
+      {:ok, {:ok, recv_subdoms}} ->
+        IO.inspect recv_subdoms
+        # If we found 0 new subdomains, move on to the next page
+        if MapSet.subset?(recv_subdoms, subdomains) do
+          schedule_work({domain, subdomains, findings_num + 10})
+        else
+          updated_subdoms = MapSet.union(subdomains, recv_subdoms)
+          schedule_work({domain, updated_subdoms, findings_num})
+        end
+      {:exit, reason} ->
+        IO.inspect reason
+    end
+    {:noreply, state}
+  end
+
+  def terminate(reason, _state) do
+    IO.inspect reason
+    :normal
+  end
+  
+  ##############################################################################
+  ########################## Private Module Functions ##########################
+  ##############################################################################
+  
+  defp schedule_work(state) do
+    Process.send_after(self(), state, 5000)
+  end
+  
+  def query({domain, subdomains, findings_num}) do
     if findings_num >= 100, do: subdomains # If we reached the 10th page, return.
 
     request = build_query(domain, subdomains, findings_num)
-    response = HTTPoison.get(request, @headers, [follow_redirect: true, recv_timeout: @timeout])
+    options = [follow_redirect: true, recv_timeout: @timeout]
+    response = HTTPoison.get(request, @headers, options)
 
     case parse_response(response) do
       {:ok, recv_subdoms} ->
-        # If we found 0 new subdomains, move on to the next page
-        if MapSet.subset?(recv_subdoms, subdomains) do
-          :timer.sleep(2000)
-          IO.inspect(subdomains)
-          query(domain, subdomains, findings_num + 10)
-        else
-          updated_subdoms = MapSet.union(subdomains, recv_subdoms)
-          IO.inspect(updated_subdoms)
-          :timer.sleep(2000)
-          query(domain, updated_subdoms, findings_num)              
-        end
+        {:ok, recv_subdoms}
       :blocked ->
         Helpers.error ~S("Google has blocked the "site:" searches, try again later")
         {:blocked, subdomains}

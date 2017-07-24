@@ -3,13 +3,15 @@ defmodule Elixter do
     Documentation for Elixter.
   """
   alias Elixter.Helpers
-  
+  alias Elixter.MainSupervisor
+
   def main(args) do
     domain = parse_args(args)
-    engines = Application.get_env(:elixter, :engines)
-    engines
-    |> Enum.map(&Task.async(&1, :enumerate, [domain]))
-    |> Enum.map(&Task.await(&1, 50_000))
+    MainSupervisor.start_link(domain) 
+    receive do
+      {:done } ->
+        System.halt(0)
+    end
   end
 
   defp parse_args(args) do

@@ -11,7 +11,7 @@ config :elixter,
       {"Accept-Language", "en-US,en;q=0.8"},
   ],
   engines: [
-    Elixter.Enumerator.GoogleEnum,
+    Elixter.Enumerator.Google,
   ],
   timeout: 25000
 # This configuration is loaded before any dependency and is restricted
