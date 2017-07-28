@@ -1,8 +1,20 @@
 defmodule Elixter.Cache do
   use GenServer
 
+  # Interface
+  
+  def update_state(set) do
+    GenServer.cast(__MODULE__, {:merge, set})
+  end
+
+  def get_state() do
+    GenServer.call(__MODULE__, :get_state)
+  end
+
+  # GenServer Callbacks
+
   def start_link(domain) do
-    GenServer.start_link(__MODULE__, domain, name: CacheServer)
+    GenServer.start_link(__MODULE__, domain, name: __MODULE__)
   end 
 
   def init(domain) do

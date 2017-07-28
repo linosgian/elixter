@@ -3,7 +3,7 @@ defmodule Elixter.Enumerator.Google do
   @timeout Application.get_env(:elixter, :timeout)
   
   alias Elixter.Helpers
-
+  alias Elixter.Cache
   ##############################################################################
   ########################## GenServer Callbacks ###############################
   ##############################################################################
@@ -19,18 +19,17 @@ defmodule Elixter.Enumerator.Google do
   end
   
   def handle_info({domain, findings_num}, state) do
-    subdomains = GenServer.call(CacheServer, :get_state)
+    subdomains = Cache.get_state()
     args = {domain, subdomains, findings_num}
     query_task = Task.Supervisor.async_nolink(QueryTask, __MODULE__, :query, [args])
     
     case Task.yield(query_task, 10000) do
       {:ok, {:ok, recv_subdoms}} ->
-        IO.puts :here
         # If we found 0 new subdomains, move on to the next page
         if MapSet.subset?(recv_subdoms, subdomains) do
           schedule_work({domain, findings_num + 10})
         else
-          GenServer.cast(CacheServer, {:merge, recv_subdoms})
+          Cache.update_state(recv_subdoms)
           schedule_work({domain, 0})
         end
       {:ok, :done} ->

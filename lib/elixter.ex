@@ -4,7 +4,7 @@ defmodule Elixter do
   """
   alias Elixter.Helpers
   alias Elixter.MainSupervisor
-
+  alias Elixter.Cache
   def main(args) do
     domain = parse_args(args)
     MainSupervisor.start_link(domain) 
@@ -13,13 +13,9 @@ defmodule Elixter do
   
   # Temp function to test pipeline
   defp poke_cache() do
-    IO.inspect GenServer.call(CacheServer, :get_state)
+    IO.inspect Cache.get_state()
     :timer.sleep(3000)
     poke_cache()
-    receive do
-      {:done } ->
-        System.halt(0)
-    end
   end
 
   defp parse_args(args) do
